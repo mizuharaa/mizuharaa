@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:Plex;font-weight:400;src:url(node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2)}
+@font-face{font-family:Plex;font-weight:500;src:url(node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-500-normal.woff2)}
+@font-face{font-family:Plex;font-weight:600;src:url(node_modules/@fontsource/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2)}
+html,body{margin:0;background:#888}
+#hero{position:relative;width:1280px;height:480px;overflow:hidden;
+  background:radial-gradient(120% 140% at 72% 30%, #F2F4F6 0%, #DDE2E7 45%, #C3CBD3 100%);
+  font-family:Plex, sans-serif;color:#15191E}
+#c{position:absolute;inset:0;width:1280px;height:480px}
+#copy{position:absolute;left:68px;top:96px;width:620px}
+#copy h1{margin:0;font-size:86px;line-height:1;font-weight:600;letter-spacing:-2px}
+#copy p{margin:24px 0 0;font-size:29px;line-height:1.32;font-weight:400;color:#323B45;max-width:600px}
+#copy small{display:block;margin-top:28px;font-size:20px;color:#4F5963;font-weight:500}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"./node_modules/three/build/three.module.js",
+  "three/examples/jsm/":"./node_modules/three/examples/jsm/",
+  "three/addons/":"./node_modules/three/examples/jsm/",
+  "urdf-loader":"./node_modules/urdf-loader/src/URDFLoader.js"
+}}
+</script>
+</head>
+<body>
+<div id="hero">
+  <canvas id="c"></canvas>
+  <div id="copy">
+    <h1>Hi, I'm Daniel.</h1>
+    <p>I write the software that makes robots move, and the data infrastructure that teaches them.</p>
+    <small>Computer Engineering at UMass Amherst<br>SWE intern at VNG Physical Things Lab</small>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import URDFLoader from 'urdf-loader';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const params = new URLSearchParams(location.search);
+const W = 1280, H = 480;
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(2);
+renderer.setSize(W, H, false);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+const camera = new THREE.PerspectiveCamera(22, W / H, 0.1, 50);
+
+scene.add(new THREE.HemisphereLight(0xf4f7fa, 0x9aa3ad, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 2.6);
+key.position.set(2.2, 3.4, 2.6);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -1.5; key.shadow.camera.right = 1.5;
+key.shadow.camera.top = 2; key.shadow.camera.bottom = -1;
+key.shadow.radius = 6; key.shadow.bias = -0.0004;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xdfe8ff, 1.4);
+rim.position.set(-2.5, 2.2, -2.5);
+scene.add(rim);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.ShadowMaterial({ opacity: 0.22 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const SHELL = new THREE.MeshStandardMaterial({ color: 0x5a6068, metalness: 0.55, roughness: 0.36 });
+const DARK = new THREE.MeshStandardMaterial({ color: 0x17191c, metalness: 0.2, roughness: 0.55 });
+
+const pose = {};
+const P = (n, v) => { pose[n] = v; };
+
+// Standing stance (radians)
+for (const s of ['left', 'right']) {
+  P(`${s}_hip_pitch_joint`, -0.12); P(`${s}_knee_joint`, 0.28); P(`${s}_ankle_pitch_joint`, -0.16);
+}
+P('left_shoulder_pitch_joint', 0.15); P('left_shoulder_roll_joint', 0.16); P('left_elbow_joint', 0.45);
+
+const A = {
+  rsp: +params.get('rsp') || -0.08, rsr: +params.get('rsr') || -1.4, rsy: +params.get('rsy') || -1.55,
+  rel: +params.get('rel') || -0.25, amp: +params.get('amp') || 0.38, yaw: +params.get('yaw') || -1.3,
+  wy: +params.get('wy') || 0.0,
+};
+
+let robot;
+const manager = new THREE.LoadingManager();
+const loader = new URDFLoader(manager);
+loader.packages = '';
+window.ready = new Promise((resolve) => {
+  manager.onLoad = () => {
+    robot.traverse((o) => {
+      if (o.isMesh) {
+        const dark = o.material && o.material.color && o.material.color.r < 0.3;
+        o.material = dark ? DARK : SHELL;
+        o.castShadow = true; o.receiveShadow = true;
+      }
+    });
+    resolve();
+  };
+  loader.load('./g1/g1_29dof_with_hand_rev_1_0.urdf', (r) => {
+    robot = r;
+    robot.rotation.x = -Math.PI / 2;
+    robot.rotation.z = A.yaw;
+    scene.add(robot);
+  });
+});
+
+function applyPose(t) {
+  const ph = 2 * Math.PI * t;
+  const set = { ...pose };
+  set.right_shoulder_pitch_joint = A.rsp;
+  set.right_shoulder_roll_joint = A.rsr;
+  set.right_shoulder_yaw_joint = A.rsy;
+  set.right_elbow_joint = A.rel + A.amp * Math.sin(ph);
+  set.right_wrist_roll_joint = 0.12 * Math.sin(ph - 0.6);
+  set.right_wrist_yaw_joint = A.wy;
+  set.waist_yaw_joint = 0.06 * Math.sin(ph);
+  set.waist_roll_joint = 0.02 * Math.sin(ph + 0.4);
+  for (const [n, v] of Object.entries(set)) {
+    if (robot.joints[n]) robot.joints[n].setJointValue(v);
+  }
+  robot.updateMatrixWorld(true);
+  // Keep feet on the floor.
+  const box = new THREE.Box3().setFromObject(robot);
+  robot.position.y -= box.min.y;
+  robot.updateMatrixWorld(true);
+}
+
+window.setupCamera = (o = {}) => {
+  const target = new THREE.Vector3(o.tx ?? -1.0, o.ty ?? 0.72, o.tz ?? 0);
+  camera.position.set(o.cx ?? 0.9, o.cy ?? 0.85, o.cz ?? 4.15);
+  camera.lookAt(target);
+};
+window.renderAt = (t) => {
+  applyPose(t);
+  renderer.render(scene, camera);
+};
+window.jointNames = () => Object.keys(robot.joints);
+window.setupCamera();
+</script>
+</body>
+</html>

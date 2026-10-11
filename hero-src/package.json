@@ -1,0 +1,10 @@
+{
+  "name": "profile-hero",
+  "private": true,
+  "description": "three.js scene that renders the waving G1 in the profile README",
+  "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "three": "^0.186.1",
+    "urdf-loader": "^0.13.1"
+  }
+}
